@@ -68,6 +68,11 @@ OpenLoft is **not** live-configured in the submitted demo. The UI always shows w
 
 ## Architecture
 
+The full product is two repositories:
+
+- **Frontend** (this repo): [gj-prog2026/RainMaker](https://github.com/gj-prog2026/RainMaker). It holds the UI, customer offer pages, post kit and the server-side adapter.
+- **Backend:** [afham-faiz/rainmaker-backend](https://github.com/afham-faiz/rainmaker-backend). It holds the decision engine, experiment tracking and persistent memory.
+
 ```
 Frontend  (TanStack Start + React, Ginger's UX)
    ↓
@@ -112,12 +117,13 @@ Every response shows where the decision came from. The strategy panel says eithe
 
 Requirements: Node.js 20+ and [Bun](https://bun.sh).
 
-The RAINMAKER backend is a separate Node.js project (`rainmaker`). This repository contains the frontend and the server-side adapter.
+The full product needs both repositories running: the backend ([afham-faiz/rainmaker-backend](https://github.com/afham-faiz/rainmaker-backend)) and this frontend.
 
 **1. Backend (port 3000)**
 
 ```bash
-cd rainmaker
+git clone https://github.com/afham-faiz/rainmaker-backend.git
+cd rainmaker-backend
 npm install
 npm start
 ```
@@ -127,6 +133,8 @@ Optional: `npm run seed` resets the backend to its seeded state, including memor
 **2. Frontend (port 8080)**
 
 ```bash
+git clone https://github.com/gj-prog2026/RainMaker.git
+cd RainMaker
 bun install
 bun run dev
 ```
