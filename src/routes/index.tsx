@@ -6,7 +6,6 @@ import {
   buildState,
   computeResults,
   DEFAULT_CONDITIONS,
-  SEED_RAW,
   type CampaignStatus,
   type Conditions,
   type DemandLevel,
@@ -60,7 +59,7 @@ function Dashboard() {
   const [running, setRunning] = useState(false);
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [launched, setLaunched] = useState<Record<VariantId, boolean>>({ A: false, B: false });
-  const [results, setResults] = useState<Results>(computeResults(SEED_RAW));
+  const [results, setResults] = useState<Results>(computeResults({ A: { impressions: 0, claims: 0 }, B: { impressions: 0, claims: 0 } }));
   const [learning, setLearning] = useState<Learning | null>(null);
   const [learnPhase, setLearnPhase] = useState<"idle" | "weighing" | "writing" | "done">("idle");
   const [preview, setPreview] = useState<VariantId | null>(null);
@@ -128,6 +127,9 @@ function Dashboard() {
       await sleep(1500);
     }
     const result = await pending;
+    setResults(await api.results()); // a new run starts a fresh experiment on the backend
+    setLaunched({ A: false, B: false });
+    setStatus("Not running");
     setRunStage(RUN_STAGES.length);
     setStrategy(result);
     setLoop(2);
@@ -153,7 +155,7 @@ function Dashboard() {
     setLearnPhase("writing");
     const l = await api.learn(latest, cond);
     await sleep(1500);
-    setLearning(l);
+    setLearning(strategy?.relevantMemories ? { ...l, relevantLearnings: strategy.relevantMemories.length } : l);
     setLearnPhase("done");
     setTimeout(() => setLoop(5), 1800);
   };
@@ -333,10 +335,40 @@ function Dashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="eyebrow text-accent">Primary objective</div>
                   {strategy.source === "gemma" && <span className="eyebrow">Powered by Gemma 4</span>}
+                  {strategy.source === "rainmaker" && (
+                    <span className="eyebrow" title={strategy.model ?? undefined}>
+                      {strategy.decisionSource === "open_model" ? "Decided by Gemma · RAINMAKER agent" : "RAINMAKER agent · rules fallback"}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-2 font-display text-3xl leading-tight normal-case">{strategy.objective}</p>
                 <div className="eyebrow mt-6">Key insight</div>
                 <p className="mt-2 leading-relaxed text-card-foreground/85">{strategy.insight}</p>
+                {strategy.reasoning && strategy.reasoning.length > 0 && (
+                  <ul className="mt-4 space-y-2 text-sm text-card-foreground/85">
+                    {strategy.reasoning.map((r) => (
+                      <li key={r} className="border-l-2 border-accent pl-3">{r}</li>
+                    ))}
+                  </ul>
+                )}
+                {strategy.relevantMemories && strategy.relevantMemories.length > 0 && (
+                  <div className="mt-6 rounded-xl bg-surface p-4">
+                    <div className="eyebrow text-success">
+                      Recalled from agent memory · {strategy.relevantMemories.length} relevant
+                      {strategy.memoryProvider ? ` · ${strategy.memoryProvider}` : ""}
+                    </div>
+                    <ul className="mt-2 space-y-2 text-sm text-card-foreground/85">
+                      {[...strategy.relevantMemories]
+                        .sort((a, b) => Number(b.startsWith("Campaign observation")) - Number(a.startsWith("Campaign observation")))
+                        .slice(0, 3)
+                        .map((m) => (
+                          <li key={m} className={cn("border-l-2 pl-3", m.startsWith("Campaign observation") ? "border-success" : "border-border")}>
+                            {m}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
               </Panel>
               {strategy.avoid ? (
                 <section className="rounded-2xl border-2 border-dashed border-muted-foreground/40 bg-background p-5">
@@ -419,7 +451,9 @@ Live · updating every 2s
           {learning && learnPhase === "done" && (
             <div className="mt-4 grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
               <Panel className="border-success/40">
-                <div className="eyebrow text-success">Agent memory updated</div>
+                <div className="eyebrow text-success">
+                  Agent memory updated{learning.memoryProvider ? ` · ${learning.memoryProvider}` : ""}
+                </div>
                 <p className="mt-2 font-display text-2xl leading-snug normal-case">{learning.memory}</p>
                 <div className="eyebrow mt-6 text-accent">Next decision</div>
                 <p className="mt-2 text-lg">{learning.nextDecision}</p>
@@ -508,7 +542,7 @@ function VariantCard({ v, launched, onPreview, onLaunch }: { v: Variant; launche
   const genVoice = async () => {
     stopRef.current();
     setVoice("loading");
-    const res = await api.voice(v.id, v.copy);
+    const res = await api.voice(v.id, v.voiceScript ?? v.copy);
     await sleep(900);
     setTranscript(res.transcript);
     setProvider(res.provider);
@@ -670,6 +704,7 @@ function HealthCheck() {
   if (state === "checking") return <span>Checking…</span>;
   return (
     <button onClick={check} className="text-left">
+      {state.backend ? `Agent backend: ${state.backend.ok ? "Connected" : "Unavailable"} · ` : ""}
       Gemma: {state.gemma.ok ? "Connected" : "Unavailable"}
       {state.gemma.model ? ` (${state.gemma.model})` : ""} · ElevenLabs: {state.eleven.ok ? "Connected" : "Unavailable"}
     </button>

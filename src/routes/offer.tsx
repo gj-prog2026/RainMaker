@@ -30,7 +30,11 @@ const OFFERS: Record<VariantId, { title: string; body: string; price?: string }>
 
 function OfferPage() {
   const { variant, preview } = Route.useSearch();
-  const offer = OFFERS[variant];
+  const [live, setLive] = useState<{ title: string; body: string; price?: string } | null>(null);
+  useEffect(() => {
+    void api.offer(variant).then(setLive);
+  }, [variant]);
+  const offer = live ?? OFFERS[variant];
   const [claimed, setClaimed] = useState(false);
   const [busy, setBusy] = useState(false);
   const sent = useRef(false);
