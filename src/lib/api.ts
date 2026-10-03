@@ -172,7 +172,7 @@ export const api = {
       return await request<EditResult>("/api/edit-campaign", {
         method: "POST",
         body: JSON.stringify({ variant, instruction, currentKit }),
-      }, 15000);
+      }, 45000);
     } catch {
       return localEdit(variant, instruction, currentKit);
     }
