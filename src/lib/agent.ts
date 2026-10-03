@@ -60,6 +60,9 @@ export interface Variant {
   channel: string;
   strategy: string;
   copy: string;
+  /** Backend-only extras (optional). */
+  voiceScript?: string | undefined;
+  reasoning?: string | undefined;
 }
 
 export interface Strategy {
@@ -67,8 +70,14 @@ export interface Strategy {
   insight: string;
   avoid: { item: string; reason: string } | null;
   variants: Variant[];
-  source?: "gemma" | "fallback";
+  source?: "gemma" | "fallback" | "rainmaker";
   model?: string | null;
+  /** Set when the RAINMAKER backend made the decision. */
+  decisionSource?: "open_model" | "deterministic_fallback";
+  reasoning?: string[];
+  nextAction?: string | undefined;
+  relevantMemories?: string[];
+  memoryProvider?: string | undefined;
 }
 
 export interface VariantResult {
@@ -87,8 +96,9 @@ export interface Learning {
   campaignsObserved: number;
   relevantLearnings: number;
   winner: VariantId;
-  source?: "gemma" | "fallback";
+  source?: "gemma" | "fallback" | "rainmaker";
   model?: string | null;
+  memoryProvider?: string | undefined;
 }
 
 const urgencyFactor: Record<Urgency, number> = { Low: 0.6, Medium: 1, Critical: 1.3 };

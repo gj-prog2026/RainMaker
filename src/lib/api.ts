@@ -158,11 +158,20 @@ export const api = {
     return { audioUrl: null, transcript: text, provider: "browser" };
   },
 
-  health: async (): Promise<{ gemma: { ok: boolean; model: string | null }; eleven: { ok: boolean } }> => {
+  health: async (): Promise<{ gemma: { ok: boolean; model: string | null }; eleven: { ok: boolean }; backend?: { ok: boolean } }> => {
     try {
       return await request("/api/health", undefined, 15000);
     } catch {
-      return { gemma: { ok: false, model: null }, eleven: { ok: false } };
+      return { gemma: { ok: false, model: null }, eleven: { ok: false }, backend: { ok: false } };
+    }
+  },
+
+  /** Live backend campaign for the offer page; null when unavailable. */
+  offer: async (variant: VariantId): Promise<{ title: string; body: string; price?: string } | null> => {
+    try {
+      return await request(`/api/campaign?variant=${variant}`);
+    } catch {
+      return null;
     }
   },
 

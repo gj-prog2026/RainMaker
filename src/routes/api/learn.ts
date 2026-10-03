@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { computeResults, learnLogic, type Results } from "@/lib/agent";
 import { getRaw } from "@/lib/results-store.server";
 import { gemmaJson, isStr } from "@/lib/gemma.server";
+import { backendLearn } from "@/lib/backend.server";
 
 const SYSTEM =
   "You are the learning module of a marketing agent for an independent chicken shop in Bradford. " +
@@ -12,6 +13,12 @@ export const Route = createFileRoute("/api/learn")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Primary: write the observation to RAINMAKER's persistent memory.
+        try {
+          return Response.json(await backendLearn());
+        } catch (e) {
+          console.warn("[learn] backend unavailable, using local learning:", (e as Error).message);
+        }
         const body = (await request.json().catch(() => ({}))) as { results?: Results; conditions?: unknown };
         const results = body.results?.A && body.results?.B ? body.results : computeResults(getRaw());
         const base = learnLogic(results); // winner computed server-side

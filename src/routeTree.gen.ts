@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OfferRouteImport } from './routes/offer'
+import { Route as ApiCampaignRouteImport } from './routes/api/campaign'
 import { Route as ApiClaimRouteImport } from './routes/api/claim'
 import { Route as ApiEditCampaignRouteImport } from './routes/api/edit-campaign'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -30,6 +31,11 @@ const IndexRoute = IndexRouteImport.update({
 const OfferRoute = OfferRouteImport.update({
   id: '/offer',
   path: '/offer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCampaignRoute = ApiCampaignRouteImport.update({
+  id: '/api/campaign',
+  path: '/api/campaign',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiClaimRoute = ApiClaimRouteImport.update({
@@ -86,6 +92,7 @@ const ApiVoiceRoute = ApiVoiceRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/offer': typeof OfferRoute
+  '/api/campaign': typeof ApiCampaignRoute
   '/api/claim': typeof ApiClaimRoute
   '/api/edit-campaign': typeof ApiEditCampaignRoute
   '/api/health': typeof ApiHealthRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/offer': typeof OfferRoute
+  '/api/campaign': typeof ApiCampaignRoute
   '/api/claim': typeof ApiClaimRoute
   '/api/edit-campaign': typeof ApiEditCampaignRoute
   '/api/health': typeof ApiHealthRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/offer': typeof OfferRoute
+  '/api/campaign': typeof ApiCampaignRoute
   '/api/claim': typeof ApiClaimRoute
   '/api/edit-campaign': typeof ApiEditCampaignRoute
   '/api/health': typeof ApiHealthRoute
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/offer'
+    | '/api/campaign'
     | '/api/claim'
     | '/api/edit-campaign'
     | '/api/health'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/offer'
+    | '/api/campaign'
     | '/api/claim'
     | '/api/edit-campaign'
     | '/api/health'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/offer'
+    | '/api/campaign'
     | '/api/claim'
     | '/api/edit-campaign'
     | '/api/health'
@@ -174,6 +186,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   OfferRoute: typeof OfferRoute
+  ApiCampaignRoute: typeof ApiCampaignRoute
   ApiClaimRoute: typeof ApiClaimRoute
   ApiEditCampaignRoute: typeof ApiEditCampaignRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -200,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/offer'
       fullPath: '/offer'
       preLoaderRoute: typeof OfferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/campaign': {
+      id: '/api/campaign'
+      path: '/api/campaign'
+      fullPath: '/api/campaign'
+      preLoaderRoute: typeof ApiCampaignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/claim': {
@@ -278,6 +298,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   OfferRoute: OfferRoute,
+  ApiCampaignRoute: ApiCampaignRoute,
   ApiClaimRoute: ApiClaimRoute,
   ApiEditCampaignRoute: ApiEditCampaignRoute,
   ApiHealthRoute: ApiHealthRoute,

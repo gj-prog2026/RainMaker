@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { buildState, runAgentLogic, type Strategy, type Variant } from "@/lib/agent";
 import { gemmaJson, isStr } from "@/lib/gemma.server";
+import { backend, mapStrategy, toBackendInput, type BRunAgent } from "@/lib/backend.server";
 
 const schema = z.object({
   rainProb: z.number().min(0).max(100),
@@ -69,6 +70,13 @@ export const Route = createFileRoute("/api/run-agent")({
         const parsed = schema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return new Response("Bad request", { status: 400 });
         const c = parsed.data;
+        // Primary: RAINMAKER backend (decision, campaigns, experiment, memory retrieval).
+        try {
+          const r = await backend<BRunAgent>("/api/run-agent", toBackendInput(c), 12000);
+          return Response.json(mapStrategy(r));
+        } catch (e) {
+          console.warn("[run-agent] backend unavailable, using local agent:", (e as Error).message);
+        }
         const base = runAgentLogic(c);
         const inventory = buildState(c).inventory.map(({ name, qty, unit, hoursRemaining, risk }) => ({ name, qty, unit, hoursRemaining, risk }));
         const res = await gemmaJson({
