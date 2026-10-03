@@ -8,6 +8,32 @@ export interface PostKit {
   hashtags: string;
   story: string;
   whatsapp: string;
+  posterTheme: PosterTheme;
+  voiceScript: string;
+  musicMood: MusicMood;
+}
+
+export const THEME_IDS = ["charcoal", "cream", "sunny", "red", "white"] as const;
+export type PosterTheme = (typeof THEME_IDS)[number];
+export const MOODS = ["upbeat", "chill", "bold"] as const;
+export type MusicMood = (typeof MOODS)[number];
+
+export interface ThemePalette { label: string; bg: string; text: string; accent: string; muted: string; rule: string }
+/** Poster palettes. Flat colours only; all pass readable contrast. */
+export const THEMES: Record<PosterTheme, ThemePalette> = {
+  charcoal: { label: "Charcoal", bg: "#1C1B1A", text: "#F5F1EA", accent: "#F26B1D", muted: "#A8A29A", rule: "#E4372B" },
+  cream: { label: "Cream", bg: "#FBF3E4", text: "#1C1B1A", accent: "#C9281D", muted: "#5F574F", rule: "#C9281D" },
+  sunny: { label: "Sunny", bg: "#FFE7A3", text: "#1C1B1A", accent: "#B8241A", muted: "#57493A", rule: "#B8241A" },
+  red: { label: "Red", bg: "#E4372B", text: "#FBF6EE", accent: "#FFC14D", muted: "#FFDCD6", rule: "#FBF6EE" },
+  white: { label: "White", bg: "#FFFFFF", text: "#1C1B1A", accent: "#C9281D", muted: "#5F5A55", rule: "#C9281D" },
+};
+export const isTheme = (v: unknown): v is PosterTheme => typeof v === "string" && (THEME_IDS as readonly string[]).includes(v);
+export const isMood = (v: unknown): v is MusicMood => typeof v === "string" && (MOODS as readonly string[]).includes(v);
+export const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+export function buildVoiceScript(v: Variant): string {
+  const offer = v.id === "A" ? `all for just ${v.price}` : "with free wings on us";
+  return `Ey up, Bradford. Rain outside? Stay in, stay warm. Bradford Fried Chicken has you sorted with the ${v.name}: ${v.items}. Delivered hot. Order now, ${offer}, tonight only.`;
 }
 
 export interface EditResult {
@@ -43,6 +69,9 @@ export function buildKit(v: Variant): PostKit {
       "Order: [ordering link]",
       "Call: [phone number]",
     ].join("\n"),
+    posterTheme: "charcoal",
+    voiceScript: buildVoiceScript(v),
+    musicMood: v.id === "A" ? "upbeat" : "bold",
   };
 }
 
@@ -98,11 +127,32 @@ export function localEdit(_variant: VariantId, instruction: string, kit: PostKit
     done.push(`added ${tag}`);
   }
 
+  const theme: PosterTheme | null = /darker|original/.test(t)
+    ? "charcoal"
+    : /sunny|warmer/.test(t)
+      ? "sunny"
+      : /lighter|brighter|softer/.test(t)
+        ? "cream"
+        : /bolder/.test(t)
+          ? "red"
+          : /cleaner|white/.test(t)
+            ? "white"
+            : null;
+  if (theme && theme !== k.posterTheme) {
+    k.posterTheme = theme;
+    done.push(`switched the poster to the ${theme} theme`);
+  }
+  const mood: MusicMood | null = /chill|calm/.test(t) ? "chill" : /\bbold\b|loud/.test(t) ? "bold" : /upbeat|fun/.test(t) ? "upbeat" : null;
+  if (mood && mood !== k.musicMood) {
+    k.musicMood = mood;
+    done.push(`switched to ${mood} music`);
+  }
+
   if (!done.length) {
     return {
       kit,
       changed: false,
-      reply: "I'll be able to handle that once live editing is connected. Try something like 'make it shorter'.",
+      reply: "I couldn't apply that one. Try: make the poster lighter, make it shorter, or chill music.",
     };
   }
   const msg = done.join(", ");

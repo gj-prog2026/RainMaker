@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
-import { api } from "@/lib/api";
-import { buildKit, PLACEHOLDERS, type PostKit } from "@/lib/postkit";
+import { api, playVoice } from "@/lib/api";
+import { buildKit, MOODS, PLACEHOLDERS, THEME_IDS, THEMES, wordCount, type MusicMood, type PostKit, type PosterTheme } from "@/lib/postkit";
+import { getNarration, pickMime, recordStoryVideo } from "@/lib/story-video";
 import type { Variant } from "@/lib/agent";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ const SIZES: Record<Format, { w: number; h: number }> = { feed: { w: 1080, h: 13
 function Poster({ kit, format }: { kit: PostKit; format: Format }) {
   const { w, h } = SIZES[format];
   const story = format === "story";
+  const th = THEMES[kit.posterTheme] ?? THEMES.charcoal;
   const display = { fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif", fontWeight: 700, textTransform: "uppercase" } as const;
   return (
     <div
@@ -49,26 +51,26 @@ function Poster({ kit, format }: { kit: PostKit; format: Format }) {
         padding: 88,
         display: "flex",
         flexDirection: "column",
-        background: "var(--background)",
-        color: "var(--foreground)",
+        background: th.bg,
+        color: th.text,
         fontFamily: "Inter, sans-serif",
         overflow: "hidden",
         boxSizing: "border-box",
       }}
     >
-      <div style={{ height: 18, background: "var(--primary)", flexShrink: 0 }} />
-      <div style={{ ...display, marginTop: 40, fontSize: 44, letterSpacing: "0.16em", color: "var(--muted-foreground)" }}>
+      <div style={{ height: 18, background: th.rule, flexShrink: 0 }} />
+      <div style={{ ...display, marginTop: 40, fontSize: 44, letterSpacing: "0.16em", color: th.muted }}>
         Bradford Fried Chicken
       </div>
       <div style={{ ...display, marginTop: story ? 160 : 72, fontSize: story ? 190 : 156, lineHeight: 0.88 }}>{kit.headline}</div>
       <div style={{ marginTop: 44, fontSize: 50, lineHeight: 1.25, maxWidth: 860, opacity: 0.85 }}>{kit.items}</div>
-      <div style={{ ...display, marginTop: story ? 96 : 40, fontSize: story ? 260 : 200, lineHeight: 0.9, color: "var(--accent)" }}>
+      <div style={{ ...display, marginTop: story ? 96 : 40, fontSize: story ? 260 : 200, lineHeight: 0.9, color: th.accent }}>
         {kit.price}
       </div>
       <div
         style={{
           marginTop: "auto",
-          borderTop: "6px solid var(--primary)",
+          borderTop: `6px solid ${th.rule}`,
           paddingTop: 36,
           display: "flex",
           justifyContent: "space-between",
@@ -77,7 +79,7 @@ function Poster({ kit, format }: { kit: PostKit; format: Format }) {
         }}
       >
         <div style={{ ...display, fontSize: 58, letterSpacing: "0.04em", lineHeight: 1, marginRight: 32 }}>Tonight only in Bradford</div>
-        <div style={{ ...display, fontSize: 30, letterSpacing: "0.14em", color: "var(--muted-foreground)" }}>Order tonight</div>
+        <div style={{ ...display, fontSize: 30, letterSpacing: "0.14em", color: th.muted }}>Order tonight</div>
       </div>
     </div>
   );
@@ -162,6 +164,48 @@ export function PostKitModal({ variant, onClose }: { variant: Variant; onClose: 
   const storyRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const slug = `bradford-fried-chicken-variant-${variant.id.toLowerCase()}`;
+  const [video, setVideo] = useState<{ url: string; blob: Blob; ext: string; key: string } | null>(null);
+  const [vStatus, setVStatus] = useState<{ phase: "idle" | "voice" | "recording"; progress: number; note?: string | undefined }>({ phase: "idle", progress: 0 });
+  const videoKey = JSON.stringify([kit.voiceScript, kit.musicMood, kit.posterTheme, kit.headline, kit.items, kit.price]);
+  const videoFresh = video && video.key === videoKey ? video : null;
+  const videoSupported = typeof window === "undefined" ? true : pickMime() !== null;
+  const UNSUPPORTED = "Video export isn't supported in this browser. Try Chrome.";
+
+  const commit = (next: PostKit, text: string, gemma = false) => {
+    const all = [...versions.slice(0, versions.length), next];
+    setVersions(all);
+    setCurrent(all.length - 1);
+    setKit(next);
+    setMsgs((m) => [...m, { from: "agent", text: `${text} Saved as v${all.length}.`, gemma }]);
+  };
+  const pickTheme = (t: PosterTheme) => {
+    if (t === kit.posterTheme) return;
+    commit({ ...kit, posterTheme: t }, `Switched the poster to the ${t} theme.`);
+  };
+
+  /** Builds the story video (voice + music + animation). Returns null when it can't. */
+  const makeVideo = async (): Promise<{ blob: Blob; ext: string } | null> => {
+    if (videoFresh) return videoFresh;
+    if (!pickMime()) {
+      setVStatus({ phase: "idle", progress: 0, note: UNSUPPORTED });
+      return null;
+    }
+    setVStatus({ phase: "voice", progress: 0 });
+    const narration = await getNarration(variant.id, kit.voiceScript);
+    const note = narration ? undefined : "Voice unavailable, exporting music only.";
+    setVStatus({ phase: "recording", progress: 0, note });
+    try {
+      const out = await recordStoryVideo({ kit, narration, onProgress: (p) => setVStatus((s) => ({ ...s, progress: p })) });
+      if (video) URL.revokeObjectURL(video.url);
+      const v = { ...out, url: URL.createObjectURL(out.blob), key: videoKey };
+      setVideo(v);
+      setVStatus({ phase: "idle", progress: 1, note });
+      return v;
+    } catch {
+      setVStatus({ phase: "idle", progress: 0, note: "The video didn't finish. Please try again." });
+      return null;
+    }
+  };
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -182,11 +226,7 @@ export function PostKitModal({ variant, onClose }: { variant: Variant; onClose: 
     setBusy(true);
     const res = await api.editCampaign(variant.id, text, kit);
     if (res.changed) {
-      const next = [...versions, res.kit];
-      setVersions(next);
-      setCurrent(next.length - 1);
-      setKit(res.kit);
-      setMsgs((m) => [...m, { from: "agent", text: `${res.reply} Saved as v${next.length}.`, gemma: res.source === "gemma" }]);
+      commit({ ...kit, ...res.kit }, res.reply, res.source === "gemma");
     } else {
       setMsgs((m) => [...m, { from: "agent", text: res.reply }]);
     }
@@ -241,6 +281,10 @@ export function PostKitModal({ variant, onClose }: { variant: Variant; onClose: 
         zip.file(`${slug}-caption.txt`, captionTxt());
         zip.file(`${slug}-story-text.txt`, kit.story);
         zip.file(`${slug}-whatsapp.txt`, kit.whatsapp);
+        const narration = await getNarration(variant.id, kit.voiceScript);
+        if (narration) zip.file(`${slug}-voiceover.mp3`, narration);
+        const v = await makeVideo();
+        if (v) zip.file(`${slug}-story-video.${v.ext}`, v.blob);
         const blob = await zip.generateAsync({ type: "blob" });
         const url = URL.createObjectURL(blob);
         save(url, `${slug}-post-kit.zip`);
@@ -280,6 +324,27 @@ export function PostKitModal({ variant, onClose }: { variant: Variant; onClose: 
                 <div className="mt-2 text-accent">{kit.hashtags}</div>
               </div>
             </div>
+            <div className="eyebrow mb-2 mt-4">Poster theme</div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {THEME_IDS.map((t) => {
+                const p = THEMES[t];
+                const on = kit.posterTheme === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => pickTheme(t)}
+                    aria-pressed={on}
+                    title={`${p.label} theme`}
+                    className={cn("rounded-[2px] border p-1 text-center", on ? "border-accent" : "border-border hover:border-muted-foreground")}
+                  >
+                    <span className="block h-8 rounded-[2px] border border-border" style={{ background: p.bg }}>
+                      <span className="block h-full w-1/3" style={{ background: p.accent }} />
+                    </span>
+                    <span className="mt-1 block font-display text-[11px] tracking-widest">{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* B) Templates */}
@@ -289,6 +354,18 @@ export function PostKitModal({ variant, onClose }: { variant: Variant; onClose: 
             <Field label="Hashtags" value={kit.hashtags} onChange={set("hashtags")} rows={2} />
             <Field label="Story text" value={kit.story} onChange={set("story")} rows={2} max={90} />
             <Field label="WhatsApp message" value={kit.whatsapp} onChange={set("whatsapp")} rows={5} />
+
+            <StoryVideo
+              kit={kit}
+              onScript={set("voiceScript")}
+              onMood={(m) => setKit((p) => ({ ...p, musicMood: m }))}
+              status={vStatus}
+              video={videoFresh}
+              supported={videoSupported}
+              unsupportedText={UNSUPPORTED}
+              onCreate={() => void makeVideo()}
+              onDownload={() => videoFresh && save(videoFresh.url, `${slug}-story-video.${videoFresh.ext}`)}
+            />
 
             <div className="border-t border-border pt-4">
               <div className="eyebrow mb-2">Upload-ready files</div>
@@ -402,5 +479,93 @@ function DlBtn({ children, onClick, busy, primary }: { children: ReactNode; onCl
     >
       {busy ? "Preparing…" : children}
     </button>
+  );
+}
+
+function StoryVideo(props: {
+  kit: PostKit;
+  onScript: (v: string) => void;
+  onMood: (m: MusicMood) => void;
+  status: { phase: "idle" | "voice" | "recording"; progress: number; note?: string | undefined };
+  video: { url: string } | null;
+  supported: boolean;
+  unsupportedText: string;
+  onCreate: () => void;
+  onDownload: () => void;
+}) {
+  const { kit, status } = props;
+  const wc = wordCount(kit.voiceScript);
+  const busy = status.phase !== "idle";
+  const [listening, setListening] = useState(false);
+  const stopRef = useRef<(() => void) | null>(null);
+  const listen = () => {
+    if (listening) {
+      stopRef.current?.();
+      setListening(false);
+      return;
+    }
+    setListening(true);
+    stopRef.current = playVoice(null, kit.voiceScript, () => setListening(false));
+  };
+  return (
+    <div className="space-y-3 border-t border-border pt-4">
+      <div className="eyebrow">Story video ad · 15s · 1080×1920</div>
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className={cn("eyebrow", (wc < 32 || wc > 42) && "text-warning")}>Voice script · {wc} words (32 to 42)</span>
+          <button onClick={listen} className="rounded-[2px] border border-border px-2.5 py-1 font-display text-xs tracking-widest hover:bg-surface">
+            {listening ? "Stop" : "Quick listen"}
+          </button>
+        </div>
+        <textarea
+          value={kit.voiceScript}
+          rows={4}
+          onChange={(e) => props.onScript(e.target.value)}
+          className="w-full resize-y rounded-md border border-border bg-background p-3 text-sm leading-relaxed outline-none focus:border-accent"
+        />
+      </div>
+      <div>
+        <div className="eyebrow mb-1.5">Music mood</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {MOODS.map((m) => (
+            <button
+              key={m}
+              onClick={() => props.onMood(m)}
+              aria-pressed={kit.musicMood === m}
+              className={cn(
+                "rounded-[2px] border py-2 font-display text-sm uppercase tracking-widest",
+                kit.musicMood === m ? "border-accent bg-accent text-accent-foreground" : "border-border hover:bg-surface",
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!props.supported ? (
+        <p className="text-sm text-muted-foreground">{props.unsupportedText}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <DlBtn onClick={props.onCreate} busy={busy}>
+              {status.phase === "voice" ? "Generating voice…" : status.phase === "recording" ? `Recording ${Math.round(status.progress * 15)}s / 15s` : props.video ? "Re-create video" : "Create video"}
+            </DlBtn>
+            <DlBtn onClick={props.onDownload} busy={!props.video || busy} primary>
+              Download video
+            </DlBtn>
+          </div>
+          {status.phase === "recording" && (
+            <div className="h-1.5 w-full overflow-hidden rounded-[2px] bg-surface">
+              <div className="h-full bg-accent transition-[width]" style={{ width: `${status.progress * 100}%` }} />
+            </div>
+          )}
+        </>
+      )}
+      {status.note && <p className="text-xs text-muted-foreground">{status.note}</p>}
+      {props.video && !busy && (
+        <video src={props.video.url} controls playsInline className="mx-auto w-[220px] rounded-md border border-border bg-background" />
+      )}
+      <p className="text-xs text-muted-foreground">Recording runs in real time, so it takes about 15 seconds.</p>
+    </div>
   );
 }
